@@ -1,15 +1,8 @@
+# Computes the checksum for a TCP segment.
+# Chapter 16 of beejs guide to networks: https://beej.us/guide/bgnet0/
+# The necessary files can be found at: https://beej.us/guide/bgnet0/source/exercises/tcpcksum/tcp_data.zip
+
 import operator
-
-
-# The TCP header is the 1s complement of the sum of 1s complement of:
-# - the pseudo tcp header, composed of the following information for IPv4:
-#   - source ip
-#   - dest ip
-#   - next byte set to 0
-#   - IP Protocol number
-#   - TCP length: tcp header + tcp data
-# - the TCP header, with 0s for the checksum
-# - the TCP data, padded with 0s to the right if it is not a multiple of 16
 
 class InvalidAddress(Exception):
     def __init__(self, addr: str):
