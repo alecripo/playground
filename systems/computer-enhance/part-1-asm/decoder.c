@@ -27,10 +27,10 @@ int main(int argc, char** argv) {
         }
     }
 
-    char* registers_small[8] = {"AL", "CL", "DL", "BL", "AH", "CH", "DH", "BH"};
-    char* registers_wide[8] = {"AX", "CX", "DX", "BX", "SP", "BP", "SI", "DI"};
+    char* registers_small[8] = {"al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"};
+    char* registers_wide[8] = {"ax", "cx", "dx", "bx", "sp", "bp", "si", "di"};
     char** registers_src;
-    char* displacements[8] = {"BX+SI", "BX+DI", "BP+SI", "BP+DI", "SI", "DI", "", "BX"};
+    char* displacements[8] = {"bx+si", "bx+di", "bp+si", "bp+di", "si", "di", "", "bx"};
     int byte;
     while (true) {
         byte = fgetc(infile);
@@ -39,14 +39,14 @@ int main(int argc, char** argv) {
         }
         // Layout: _  _  _  _  _  _     _             _
         //        |6 bits : opcode>|   |1 bit: dest| |1 bit: wide|
-        bool dest = byte & 0b00000010;
-        bool wide = byte & 0b00000001;
+        bool is_dest = byte & 0b00000010;
+        bool is_wide = byte & 0b00000001;
         switch (byte >> 2) {
             // MOV
-            case 0x100010:
-            case 0x110001:
-            case 0x101000:
-            case 0x100011:
+            case 0b00100010:
+            case 0b00110001:
+            case 0b00101000:
+            case 0b00100011:
                 // Layout:
                 // _  _              _  _  _            _  _  _
                 //|2 bits : mode|   |3 bits: register| |3 bits: register/memory|
@@ -62,23 +62,23 @@ int main(int argc, char** argv) {
                 } else if (mode == 0x01 || mode == 0x02) {
 
                 } else {
-                    if (wide) {
+                    if (is_wide) {
                         registers_src = registers_wide;
                     } else {
                         registers_src = registers_small;
                     }
                     char* dest = registers_src[reg];
                     char* src = registers_src[reg_or_mem];
-                    if (!dest) {
+                    if (!is_dest) {
                         char* aux = dest;
                         dest = src;
                         src=aux;
                     }
-                    fprintf(outfile, "MOV %s, %s", dest, src);
+                    fprintf(outfile, "mov %s, %s\n", dest, src);
                 }
                 break;
             default:
-                fprintf(stderr, "error: unknown byte: %x\n", byte);
+                fprintf(stderr, "error: unknown opcode: %x\n", byte>>2);
                 break;
         }
     }
