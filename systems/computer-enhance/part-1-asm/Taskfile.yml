@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: "3"
+
+interval: "500ms"
+
+tasks:
+  build:
+    desc: build in debug mode
+    watch: true
+    sources:
+      - "decoder.c"
+    cmds:
+      - clang -O0 -o bin/decoder decoder.c
+    silent: true

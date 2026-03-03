@@ -1,3 +1,6 @@
 .venv
 tcp_*.txt
 tcp_*.dat
+
+.task/
+bin/
