@@ -157,17 +157,22 @@ main(int argc, char** argv) {
         if (byte == EOF) {
             break;
         }
+
         /* Opcode Layout:
             _  _  _  _           _             _ _ _
            |4 bits : opcode>|   |1 bit: wide| |3 bits: register|
         */
         switch (byte >> 4) {
             case 0b00001011:
-                handle_immediate_mov(byte, infile, outfile);
+                bool error = handle_immediate_mov(byte, infile, outfile);
+                if (error) {
+                    return 1;
+                }
                 goto loop;
             default:
                 break;
         }
+
         /*  Opcode Layout:
             _  _  _  _  _  _     _                    _
             |6 bits : opcode>|   |1 bit: destination| |1 bit: wide|
@@ -177,7 +182,10 @@ main(int argc, char** argv) {
         case 0b00110001: /* FALLTHROUGH */
         case 0b00101000: /* FALLTHROUGH */
         case 0b00100011:
-            handle_mov(byte, infile, outfile);
+            bool error = handle_mov(byte, infile, outfile);
+            if (error) {
+                return 1;
+            }
             goto loop;
         default:
             fprintf(stderr, "error: unknown opcode: %x\n", byte>>2);
