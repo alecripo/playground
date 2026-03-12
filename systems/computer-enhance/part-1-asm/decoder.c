@@ -3,8 +3,131 @@
 #include<stdint.h>
 #include <string.h>
 #include<stdbool.h>
+#include <stdlib.h>
 
-int main(int argc, char** argv) {
+char* REGISTERS_SMALL[8] = {"al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"};
+char* REGISTERS_WIDE[8] = {"ax", "cx", "dx", "bx", "sp", "bp", "si", "di"};
+char* EFFECTIVE_ADDRESSES[8] = {"bx + si", "bx + di", "bp + si", "bp + di", "si", "di", "bp", "bx"};
+
+int
+handle_mov(int byte, FILE* infile, FILE* outfile) {
+    char** registers_src;
+    char dest[32]="";
+    char src[32]="";
+    bool is_dest = byte & 0b00000010;
+    bool is_wide = byte & 0b00000001;
+
+    // Layout:
+    // _  _              _  _  _            _  _  _
+    //|2 bits : mode|   |3 bits: register| |3 bits: register/memory|
+    if ( (byte = fgetc(infile)) == EOF ) {
+        fprintf(stderr, "Invalid byte stream: expected second byte of MOV, got EOF");
+        return 1;
+    }
+    uint8_t mode = (byte >> 6);
+    uint8_t reg = (byte & 0b00111000) >> 3;
+    uint8_t reg_or_mem = (byte & 0b00000111);
+
+    if (is_wide) {
+        registers_src = REGISTERS_WIDE;
+    } else {
+        registers_src = REGISTERS_SMALL;
+    }
+    strncpy(dest, registers_src[reg], 32);
+    strncpy(src, registers_src[reg_or_mem], 32);
+    if (mode == 0x00) {
+        if (reg_or_mem == 0b00000110) {
+            uint16_t imm_val = 0;
+            byte = fgetc(infile);
+            if (byte == EOF) {
+                fprintf(stderr, "Invalid byte stream: expected immediate value, got EOF");
+                return 1;
+            }
+            imm_val |= byte;
+            byte = fgetc(infile);
+            if (byte == EOF) {
+                fprintf(stderr, "Invalid byte stream: expected immediate value, got EOF");
+                return 1;
+            }
+            int16_t high_byte = byte;
+            imm_val = (high_byte<<8) | imm_val;
+            sprintf(dest, "%x", imm_val);
+        } else {
+            sprintf(dest, "[%s]", EFFECTIVE_ADDRESSES[reg_or_mem]);
+        }
+    } else if (mode == 0x01) {
+        int16_t imm_val = 0;
+        if ((byte = fgetc(infile)) == EOF) {
+            fprintf(stderr, "Invalid byte stream: expected immediate value, got EOF");
+            return 1;
+        }
+        imm_val |= byte;
+        if (imm_val != 0) {
+            sprintf(dest, "[%s + %x]", EFFECTIVE_ADDRESSES[reg_or_mem], imm_val);
+        } else {
+            sprintf(dest, "[%s]", EFFECTIVE_ADDRESSES[reg_or_mem]);
+        }
+    } else if (mode == 0x02) {
+        int16_t imm_val = 0;
+        byte = fgetc(infile);
+        if (byte == EOF) {
+            fprintf(stderr, "Invalid byte stream: expected immediate value, got EOF");
+            return 1;
+        }
+        imm_val |= byte;
+        byte = fgetc(infile);
+        if (byte == EOF) {
+            fprintf(stderr, "Invalid byte stream: expected immediate value, got EOF");
+            return 1;
+        }
+        int16_t high_byte = byte;
+        imm_val = (high_byte<<8) | imm_val;
+        if (imm_val != 0) {
+            sprintf(dest, "[%s + %x]", EFFECTIVE_ADDRESSES[reg_or_mem], imm_val);
+        } else {
+            sprintf(dest, "[%s]", EFFECTIVE_ADDRESSES[reg_or_mem]);
+        }
+    }
+    if (!is_dest) {
+        char aux[32];
+        strncpy(aux, dest, 32);
+        strncpy(dest, src, 32);
+        strncpy(src, aux, 32);
+    }
+    fprintf(outfile, "mov %s, %s\n", dest, src);
+    return 0;
+
+}
+int
+handle_immediate_mov(int op_byte, FILE* infile, FILE* outfile) {
+    bool is_wide = op_byte & 0b00001000;
+    uint8_t reg = op_byte & 0b00000111;
+    int16_t immediate=0;
+
+    if ( (op_byte = fgetc(infile)) == EOF ) {
+        fprintf(stderr, "Invalid byte stream: expected second byte of MOV, got EOF");
+        return 1;
+    }
+
+    immediate |= op_byte;
+    if (!is_wide) {
+        immediate = (immediate ^ 0x80)-0x80;
+        fprintf(outfile, "mov %s, %d\n", REGISTERS_SMALL[reg], immediate);
+        return 0;
+    }
+    if ( (op_byte = fgetc(infile)) == EOF ) {
+        fprintf(stderr, "Invalid byte stream: expected second byte of MOV, got EOF");
+        return 1;
+    }
+    int16_t high_byte = op_byte;
+    immediate = high_byte<<8 | immediate;
+
+    fprintf(outfile, "mov %s, %d\n", REGISTERS_WIDE[reg], immediate);
+    return 0;
+}
+
+int
+main(int argc, char** argv) {
     if (argc != 3) {
         printf("Usage: decoder <IN_FILE> <OUT_FILE>\n\
             <IN_FILE>: binary file that will be decoded to 8086 assembly\n\
@@ -27,60 +150,40 @@ int main(int argc, char** argv) {
         }
     }
 
-    char* registers_small[8] = {"al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"};
-    char* registers_wide[8] = {"ax", "cx", "dx", "bx", "sp", "bp", "si", "di"};
-    char** registers_src;
-    char* displacements[8] = {"bx+si", "bx+di", "bp+si", "bp+di", "si", "di", "", "bx"};
     int byte;
+    loop:
     while (true) {
         byte = fgetc(infile);
         if (byte == EOF) {
             break;
         }
-        // Layout: _  _  _  _  _  _     _             _
-        //        |6 bits : opcode>|   |1 bit: dest| |1 bit: wide|
-        bool is_dest = byte & 0b00000010;
-        bool is_wide = byte & 0b00000001;
-        switch (byte >> 2) {
-            // MOV
-            case 0b00100010:
-            case 0b00110001:
-            case 0b00101000:
-            case 0b00100011:
-                // Layout:
-                // _  _              _  _  _            _  _  _
-                //|2 bits : mode|   |3 bits: register| |3 bits: register/memory|
-                if ( (byte = fgetc(infile)) == EOF ) {
-                    fprintf(stderr, "Invalid byte stream: expected second byte of MOV, got EOF");
-                    return 1;
-                }
-                uint8_t mode = (byte >> 6);
-                uint8_t reg = (byte & 0b00111000) >> 3;
-                uint8_t reg_or_mem = (byte & 0b00000111);
-                if (mode == 0x00) {
-
-                } else if (mode == 0x01 || mode == 0x02) {
-
-                } else {
-                    if (is_wide) {
-                        registers_src = registers_wide;
-                    } else {
-                        registers_src = registers_small;
-                    }
-                    char* dest = registers_src[reg];
-                    char* src = registers_src[reg_or_mem];
-                    if (!is_dest) {
-                        char* aux = dest;
-                        dest = src;
-                        src=aux;
-                    }
-                    fprintf(outfile, "mov %s, %s\n", dest, src);
-                }
-                break;
+        /* Opcode Layout:
+            _  _  _  _           _             _ _ _
+           |4 bits : opcode>|   |1 bit: wide| |3 bits: register|
+        */
+        switch (byte >> 4) {
+            case 0b00001011:
+                handle_immediate_mov(byte, infile, outfile);
+                goto loop;
             default:
-                fprintf(stderr, "error: unknown opcode: %x\n", byte>>2);
                 break;
         }
+        /*  Opcode Layout:
+            _  _  _  _  _  _     _                    _
+            |6 bits : opcode>|   |1 bit: destination| |1 bit: wide|
+        */
+        switch (byte >> 2) {
+        case 0b00100010: /* FALLTHROUGH */
+        case 0b00110001: /* FALLTHROUGH */
+        case 0b00101000: /* FALLTHROUGH */
+        case 0b00100011:
+            handle_mov(byte, infile, outfile);
+            goto loop;
+        default:
+            fprintf(stderr, "error: unknown opcode: %x\n", byte>>2);
+            break;
+        }
+
     }
     return 0;
 }
