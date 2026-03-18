@@ -35,58 +35,58 @@ handle_mov(int byte, FILE* infile, FILE* outfile) {
     strncpy(dest, register_names[reg], 32);
     strncpy(src, register_names[reg_or_mem], 32);
 
-    if (mode == 0x00) {
-        if (reg_or_mem == 0b00000110) {
-            int16_t imm_val = 0;
-            byte = fgetc(infile);
-            if (byte == EOF) {
-                fprintf(stderr, "Invalid byte stream: expected immediate value, got EOF");
-                return 1;
-            }
-            imm_val |= byte;
-            byte = fgetc(infile);
-            if (byte == EOF) {
-                fprintf(stderr, "Invalid byte stream: expected immediate value, got EOF");
-                return 1;
-            }
-            imm_val = ((int16_t)byte << 8) | imm_val;
-            sprintf(src, "%d", imm_val);
-        } else {
+    switch (mode) {
+    case 0x00:
+        if (reg_or_mem != 0b00000110) {
             sprintf(src, "[%s]", EFFECTIVE_ADDRESSES[reg_or_mem]);
+            break;
         }
-    } else if (mode == 0x01) {
+        int16_t imm_val = 0;
+        byte = fgetc(infile);
+        if (byte == EOF) {
+            fprintf(stderr, "Invalid byte stream: expected immediate value, got EOF");
+            return 1;
+        }
+        imm_val |= byte;
+        byte = fgetc(infile);
+        if (byte == EOF) {
+            fprintf(stderr, "Invalid byte stream: expected immediate value, got EOF");
+            return 1;
+        }
+        imm_val = ((int16_t)byte << 8) | imm_val;
+        sprintf(src, "%d", imm_val);
+        break;
+    // handle 8-bit and 16-bit memory displacements in the same block
+    case 0x01: /* FALLTHROUGH */
+    case 0x02: {
         int16_t displacement = 0;
         if ((byte = fgetc(infile)) == EOF) {
-            fprintf(stderr, "Invalid byte stream: expected displacement, got EOF");
+            fprintf(stderr, "Invalid byte stream: expected 8-bit displacement, got EOF");
             return 1;
         }
         displacement |= byte;
+
+        if (mode == 0x02) {
+            byte = fgetc(infile);
+            if (byte == EOF) {
+                fprintf(stderr, "Invalid byte stream: expected 16-bit displacement, got EOF");
+                return 1;
+            }
+            displacement = ((int16_t)byte<<8) | displacement;
+        }
+
         if (displacement != 0) {
             sprintf(src, "[%s + %d]", EFFECTIVE_ADDRESSES[reg_or_mem], displacement);
         } else {
             sprintf(src, "[%s]", EFFECTIVE_ADDRESSES[reg_or_mem]);
         }
-    } else if (mode == 0x02) {
-        int16_t displacement = 0;
-        byte = fgetc(infile);
-        if (byte == EOF) {
-            fprintf(stderr, "Invalid byte stream: expected immediate value, got EOF");
-            return 1;
-        }
-        displacement |= byte;
-        byte = fgetc(infile);
-        if (byte == EOF) {
-            fprintf(stderr, "Invalid byte stream: expected immediate value, got EOF");
-            return 1;
-        }
-        int16_t high_byte = byte;
-        displacement = (high_byte<<8) | displacement;
-        if (displacement != 0) {
-            sprintf(src, "[%s + %d]", EFFECTIVE_ADDRESSES[reg_or_mem], displacement);
-        } else {
-            sprintf(src, "[%s]", EFFECTIVE_ADDRESSES[reg_or_mem]);
-        }
+        break;
     }
+    case 0x03: /* FALL THROUGH */
+    default:
+        break;
+    }
+
     if (!is_first_op_dest) {
         char aux[32];
         strncpy(aux, dest, 32);
@@ -114,7 +114,7 @@ handle_immediate_mov(int op_byte, FILE* infile, FILE* outfile) {
         fprintf(outfile, "mov %s, %d\n", REGISTERS_SMALL[reg], immediate);
         return 0;
     }
-    
+
     if ( (op_byte = fgetc(infile)) == EOF ) {
         fprintf(stderr, "Invalid byte stream: expected second byte of MOV, got EOF");
         return 1;
