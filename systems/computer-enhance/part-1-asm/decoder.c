@@ -72,13 +72,13 @@ handle_mov(int byte, FILE* infile, FILE* outfile) {
                 fprintf(stderr, "Invalid byte stream: expected 16-bit displacement, got EOF");
                 return 1;
             }
-            displacement = ((int16_t)byte<<8) | displacement;
+            displacement |= ((int16_t)byte<<8);
         }
 
-        if (displacement != 0) {
-            sprintf(src, "[%s + %d]", EFFECTIVE_ADDRESSES[reg_or_mem], displacement);
-        } else {
+        if (displacement == 0) {
             sprintf(src, "[%s]", EFFECTIVE_ADDRESSES[reg_or_mem]);
+        } else {
+            sprintf(src, "[%s + %d]", EFFECTIVE_ADDRESSES[reg_or_mem], displacement);
         }
         break;
     }
