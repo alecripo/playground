@@ -50,9 +50,9 @@ handle_mov(int byte, FILE* infile, FILE* outfile) {
                 return 1;
             }
             imm_val = ((int16_t)byte << 8) | imm_val;
-            sprintf(dest, "%x", imm_val);
+            sprintf(src, "%d", imm_val);
         } else {
-            sprintf(dest, "[%s]", EFFECTIVE_ADDRESSES[reg_or_mem]);
+            sprintf(src, "[%s]", EFFECTIVE_ADDRESSES[reg_or_mem]);
         }
     } else if (mode == 0x01) {
         int16_t displacement = 0;
@@ -62,29 +62,29 @@ handle_mov(int byte, FILE* infile, FILE* outfile) {
         }
         displacement |= byte;
         if (displacement != 0) {
-            sprintf(dest, "[%s + %x]", EFFECTIVE_ADDRESSES[reg_or_mem], displacement);
+            sprintf(src, "[%s + %d]", EFFECTIVE_ADDRESSES[reg_or_mem], displacement);
         } else {
-            sprintf(dest, "[%s]", EFFECTIVE_ADDRESSES[reg_or_mem]);
+            sprintf(src, "[%s]", EFFECTIVE_ADDRESSES[reg_or_mem]);
         }
     } else if (mode == 0x02) {
-        int16_t imm_val = 0;
+        int16_t displacement = 0;
         byte = fgetc(infile);
         if (byte == EOF) {
             fprintf(stderr, "Invalid byte stream: expected immediate value, got EOF");
             return 1;
         }
-        imm_val |= byte;
+        displacement |= byte;
         byte = fgetc(infile);
         if (byte == EOF) {
             fprintf(stderr, "Invalid byte stream: expected immediate value, got EOF");
             return 1;
         }
         int16_t high_byte = byte;
-        imm_val = (high_byte<<8) | imm_val;
-        if (imm_val != 0) {
-            sprintf(dest, "[%s + %x]", EFFECTIVE_ADDRESSES[reg_or_mem], imm_val);
+        displacement = (high_byte<<8) | displacement;
+        if (displacement != 0) {
+            sprintf(src, "[%s + %d]", EFFECTIVE_ADDRESSES[reg_or_mem], displacement);
         } else {
-            sprintf(dest, "[%s]", EFFECTIVE_ADDRESSES[reg_or_mem]);
+            sprintf(src, "[%s]", EFFECTIVE_ADDRESSES[reg_or_mem]);
         }
     }
     if (!is_first_op_dest) {
@@ -107,13 +107,14 @@ handle_immediate_mov(int op_byte, FILE* infile, FILE* outfile) {
         fprintf(stderr, "Invalid byte stream: expected second byte of MOV, got EOF");
         return 1;
     }
-
     immediate |= op_byte;
+
     if (!is_wide) {
         immediate = (immediate ^ 0x80)-0x80;
         fprintf(outfile, "mov %s, %d\n", REGISTERS_SMALL[reg], immediate);
         return 0;
     }
+    
     if ( (op_byte = fgetc(infile)) == EOF ) {
         fprintf(stderr, "Invalid byte stream: expected second byte of MOV, got EOF");
         return 1;
