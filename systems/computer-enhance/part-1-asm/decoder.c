@@ -1,8 +1,7 @@
-#include <errno.h>
-#include<stdio.h>
-#include<stdint.h>
+#include <stdio.h>
+#include <stdint.h>
 #include <string.h>
-#include<stdbool.h>
+#include <stdbool.h>
 #include <stdlib.h>
 
 char* REGISTERS_SMALL[8] = {"al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"};
@@ -11,11 +10,16 @@ char* EFFECTIVE_ADDRESSES[8] = {"bx + si", "bx + di", "bp + si", "bp + di", "si"
 
 int
 handle_mov(int byte, FILE* infile, FILE* outfile) {
-    char** registers_src;
     char dest[32]="";
     char src[32]="";
-    bool is_dest = byte & 0b00000010;
-    bool is_wide = byte & 0b00000001;
+    bool is_first_op_dest = byte & 0b00000010;
+    char** register_names;
+    // Are we working with wide or small registers?
+    if (byte & 0b00000001) {
+        register_names = REGISTERS_WIDE;
+    } else {
+        register_names = REGISTERS_SMALL;
+    }
 
     // Layout:
     // _  _              _  _  _            _  _  _
@@ -28,16 +32,12 @@ handle_mov(int byte, FILE* infile, FILE* outfile) {
     uint8_t reg = (byte & 0b00111000) >> 3;
     uint8_t reg_or_mem = (byte & 0b00000111);
 
-    if (is_wide) {
-        registers_src = REGISTERS_WIDE;
-    } else {
-        registers_src = REGISTERS_SMALL;
-    }
-    strncpy(dest, registers_src[reg], 32);
-    strncpy(src, registers_src[reg_or_mem], 32);
+    strncpy(dest, register_names[reg], 32);
+    strncpy(src, register_names[reg_or_mem], 32);
+
     if (mode == 0x00) {
         if (reg_or_mem == 0b00000110) {
-            uint16_t imm_val = 0;
+            int16_t imm_val = 0;
             byte = fgetc(infile);
             if (byte == EOF) {
                 fprintf(stderr, "Invalid byte stream: expected immediate value, got EOF");
@@ -49,21 +49,20 @@ handle_mov(int byte, FILE* infile, FILE* outfile) {
                 fprintf(stderr, "Invalid byte stream: expected immediate value, got EOF");
                 return 1;
             }
-            int16_t high_byte = byte;
-            imm_val = (high_byte<<8) | imm_val;
+            imm_val = ((int16_t)byte << 8) | imm_val;
             sprintf(dest, "%x", imm_val);
         } else {
             sprintf(dest, "[%s]", EFFECTIVE_ADDRESSES[reg_or_mem]);
         }
     } else if (mode == 0x01) {
-        int16_t imm_val = 0;
+        int16_t displacement = 0;
         if ((byte = fgetc(infile)) == EOF) {
-            fprintf(stderr, "Invalid byte stream: expected immediate value, got EOF");
+            fprintf(stderr, "Invalid byte stream: expected displacement, got EOF");
             return 1;
         }
-        imm_val |= byte;
-        if (imm_val != 0) {
-            sprintf(dest, "[%s + %x]", EFFECTIVE_ADDRESSES[reg_or_mem], imm_val);
+        displacement |= byte;
+        if (displacement != 0) {
+            sprintf(dest, "[%s + %x]", EFFECTIVE_ADDRESSES[reg_or_mem], displacement);
         } else {
             sprintf(dest, "[%s]", EFFECTIVE_ADDRESSES[reg_or_mem]);
         }
@@ -88,7 +87,7 @@ handle_mov(int byte, FILE* infile, FILE* outfile) {
             sprintf(dest, "[%s]", EFFECTIVE_ADDRESSES[reg_or_mem]);
         }
     }
-    if (!is_dest) {
+    if (!is_first_op_dest) {
         char aux[32];
         strncpy(aux, dest, 32);
         strncpy(dest, src, 32);
