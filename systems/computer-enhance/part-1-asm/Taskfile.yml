@@ -11,5 +11,5 @@ tasks:
     sources:
       - "decoder.c"
     cmds:
-      - clang -O0 -o bin/decoder decoder.c
+      - clang -g -O0 -o bin/decoder decoder.c
     silent: true
